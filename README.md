@@ -46,23 +46,25 @@ Steps to run:
 
 Depending on the time period specified by the user, the duration of the script may vary. After finishing, the created csv file will have the following columns:
 
-- Year
-- Month
-- Day
-- Temperature_Avg
-- Temperature_Max
-- Temperature_Min
-- Sea_Level_Pressure
-- Humidity_Avg
-- Precipitation_Total
-- Visibility_Avg
-- Wind_Avg
-- Wind_Sustained_Max
-- Wind_Max
-- Is_Rain
-- Is_Snow
-- Is_Storm
-- Is_Fog
+| Column              | Description                                 |
+| ------------------- | ------------------------------------------- |
+| Year                |                                             |
+| Month               |                                             |
+| Day                 |                                             |
+| Temperature_Avg     | Average Temperature (°C)                    |
+| Temperature_Max     | Maximum temperature (°C)                    |
+| Temperature_Min     | Minimum temperature (°C)                    |
+| Sea_Level_Pressure  | Atmospheric pressure at sea level (hPa)     |
+| Humidity_Avg        | Average relative humidity (%)               |
+| Precipitation_Total | Total rainfall and / or snowmelt (mm)       |
+| Visibility_Avg      | Average visibility (Km)                     |
+| Wind_Avg            | Average wind speed (Km/h)                   |
+| Wind_Sustained_Max  | Maximum sustained wind speed (Km/h          |
+| Wind_Max            | Maximum speed of wind (Km/h)                |
+| Is_Rain             | Indicates whether there was rain or drizzle |
+| Is_Snow             | Indicates whether there was snow            |
+| Is_Storm            | Indicates whether there was storm           |
+| Is_Fog              | Indicates whether there was fog             |
 
 Example of the csv file created:
 
