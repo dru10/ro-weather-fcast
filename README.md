@@ -59,7 +59,7 @@ Depending on the time period specified by the user, the duration of the script m
 | Precipitation_Total | Total rainfall and / or snowmelt (mm)       |
 | Visibility_Avg      | Average visibility (Km)                     |
 | Wind_Avg            | Average wind speed (Km/h)                   |
-| Wind_Sustained_Max  | Maximum sustained wind speed (Km/h          |
+| Wind_Sustained_Max  | Maximum sustained wind speed (Km/h)         |
 | Wind_Max            | Maximum speed of wind (Km/h)                |
 | Is_Rain             | Indicates whether there was rain or drizzle |
 | Is_Snow             | Indicates whether there was snow            |
