@@ -7,8 +7,10 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
+BASE_PATH = os.path.join("/", *os.environ["VIRTUAL_ENV"].split("/")[:-1])
+
 # Load environment configuration
-load_dotenv("data.env")
+load_dotenv(os.path.join(BASE_PATH, "env", "data.env"))
 
 # Setup webdriver
 options = Options()
@@ -24,6 +26,9 @@ years = [str(year) for year in range(start_year, end_year + 1)]
 # Other script variables
 months = [str(month).zfill(2) for month in range(1, 13)]
 strong_re = r"<strong>(\d+)</strong>"
+destination_path = os.path.join(
+    "datasets", f"{weather_station}_{start_year}_{end_year}.csv"
+)
 
 measured_data = [
     "Year",
@@ -48,7 +53,7 @@ measured_data = [
 table_xpath = "//*[@id='ColumnaIzquierda']/div/div[4]/table"
 
 # Open csv file and write data according to table
-with open(f"data.csv", "w", newline="") as file:
+with open(destination_path, "w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow(measured_data)
 
