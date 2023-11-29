@@ -1,14 +1,12 @@
 import os
 import time
 from collections import defaultdict
-from dotenv import load_dotenv
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.preprocessing import MinMaxScaler
+from dotenv import load_dotenv
 
 from dataset import get_train_valid_dataset
 
@@ -29,6 +27,24 @@ LEARNING_RATE = float(os.getenv("LEARNING_RATE"))
 EPOCHS = int(os.getenv("EPOCHS"))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+MODEL_PATH = os.path.join(
+    BASE_PATH,
+    "models",
+    "LSTM",
+    "lags",
+    str(N_LAGS),
+    "hidden",
+    str(HIDDEN_SIZE),
+    "layers",
+    str(NUM_LAYERS),
+    "dropout",
+    str(DROPOUT),
+    "learning_rate",
+    str(LEARNING_RATE),
+    "epochs",
+    str(EPOCHS),
+)
 
 
 class MyLSTM(nn.Module):
@@ -149,6 +165,27 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
     return train_loss, valid_loss
 
 
+def evaluate_model(model, x_valid, y_valid, temp_scaler):
+    # Evaluate performance on validation set
+    true_temperatures = temp_scaler.inverse_transform(y_valid)
+    pred_temperatures = np.zeros(true_temperatures.shape)
+
+    model.eval()
+    hidden = model.initialize_hidden()
+    for idx, x in enumerate(x_valid):
+        x = x.to(device)
+
+        hidden = tuple([state.data for state in hidden])
+        pred, hidden = model.forward(x, hidden)
+
+        pred_temp = temp_scaler.inverse_transform(
+            np.array(pred.item()).reshape(-1, 1)
+        )
+        pred_temperatures[idx] = pred_temp
+
+    return true_temperatures, pred_temperatures
+
+
 def plot_loss_curves(train_loss, valid_loss, model_path):
     tloss = [np.array(v).sum() / len(v) for k, v in train_loss.items()]
     vloss = [np.array(v).sum() / len(v) for k, v in valid_loss.items()]
@@ -163,6 +200,19 @@ def plot_loss_curves(train_loss, valid_loss, model_path):
     plt.savefig(os.path.join(model_path, "loss_curves.jpg"))
 
 
+def plot_validation_results(index, true, pred, model_path):
+    plt.figure(figsize=(10, 4))
+    plt.plot(index, true, label="True Temperature", color="#5884cc")
+    plt.plot(index, pred, label="Predicted Temperature", color="#db3959")
+    plt.legend()
+    plt.xlabel("Date")
+    plt.ylabel("Average Temperature (°C)")
+    plt.ylim((-10, 40))
+    plt.title("Prediction results on validation set")
+    plt.grid()
+    plt.savefig(os.path.join(model_path, "validation_performance.jpg"))
+
+
 if __name__ == "__main__":
     to_predict = "Temperature_Avg"
     datasets = get_train_valid_dataset(to_predict)
@@ -170,6 +220,8 @@ if __name__ == "__main__":
     to_predict_idx = datasets[to_predict]
     train_ds = datasets["train"]
     valid_ds = datasets["valid"]
+    temp_scaler = datasets["temp_scaler"]
+    valid_index = datasets["valid_timestamps"]
 
     x_train, y_train = build_set(train_ds, to_predict_idx, N_LAGS)
 
@@ -197,25 +249,16 @@ if __name__ == "__main__":
         epochs=EPOCHS,
     )
 
-    model_path = os.path.join(
-        BASE_PATH,
-        "models",
-        "LSTM",
-        "lags",
-        str(N_LAGS),
-        "hidden",
-        str(HIDDEN_SIZE),
-        "layers",
-        str(NUM_LAYERS),
-        "dropout",
-        str(DROPOUT),
-        "learning_rate",
-        str(LEARNING_RATE),
-        "epochs",
-        str(EPOCHS),
+    os.makedirs(MODEL_PATH)
+
+    plot_loss_curves(train_loss, valid_loss, MODEL_PATH)
+
+    torch.save(model.state_dict(), os.path.join(MODEL_PATH, "params.pt"))
+
+    true_temperatures, pred_temperatures = evaluate_model(
+        model=model, x_valid=x_valid, y_valid=y_valid, temp_scaler=temp_scaler
     )
-    os.makedirs(model_path)
 
-    plot_loss_curves(train_loss, valid_loss, model_path)
-
-    torch.save(model.state_dict(), os.path.join(model_path, "params.pt"))
+    plot_validation_results(
+        valid_index, true_temperatures, pred_temperatures, MODEL_PATH
+    )

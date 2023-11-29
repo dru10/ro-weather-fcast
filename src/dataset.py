@@ -119,4 +119,12 @@ def get_train_valid_dataset(to_predict):
 
     to_predict_idx = cont_cols.index(to_predict)
 
-    return {to_predict: to_predict_idx, "train": train_ds, "valid": valid_ds}
+    return {
+        to_predict: to_predict_idx,
+        "train": train_ds,
+        "valid": valid_ds,
+        "temp_scaler": temp_scaler,
+        "cont_scaler": scaler,
+        "train_timestamps": train_df.index,
+        "valid_timestamps": valid_df.index,
+    }
