@@ -1,3 +1,4 @@
+import csv
 import os
 import time
 from collections import defaultdict
@@ -7,11 +8,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dotenv import load_dotenv
+from scipy.stats import pearsonr
 
 from dataset import get_train_valid_dataset
 from models import MyGRU, MyLSTM
 
 BASE_PATH = os.path.join("/", *os.environ["VIRTUAL_ENV"].split("/")[:-1])
+RESULTS_CSV = os.path.join(BASE_PATH, "results.csv")
 
 load_dotenv(os.path.join(BASE_PATH, "env", "train.env"))
 
@@ -162,6 +165,54 @@ def evaluate_model(model, x_valid, y_valid, temp_scaler):
     return true_temperatures, pred_temperatures
 
 
+def save_metrics(
+    true,
+    pred,
+    model_type,
+    lags,
+    hidden,
+    layers,
+    dropout,
+    learning_rate,
+    epochs,
+):
+    rmse = np.sqrt(np.mean((pred - true)) ** 2)
+    mape = np.mean(np.abs((true - pred) / true)) * 100
+    R, p = pearsonr(true.flatten(), pred.flatten())
+
+    headers = [
+        "ModelType",
+        "Lags",
+        "Hidden",
+        "Layers",
+        "Dropout",
+        "Learning_Rate",
+        "Epochs",
+        "RMSE",
+        "MAPE",
+        "R",
+    ]
+    stats = [
+        model_type,
+        lags,
+        hidden,
+        layers,
+        dropout,
+        learning_rate,
+        epochs,
+        rmse,
+        mape,
+        R,
+    ]
+
+    with open(RESULTS_CSV, "a", newline="") as file:
+        writer = csv.writer(file)
+        if file.tell() == 0:
+            # File is empty, write headers
+            writer.writerow(headers)
+        writer.writerow(stats)
+
+
 def plot_loss_curves(train_loss, valid_loss, model_path):
     tloss = [np.array(v).sum() / len(v) for k, v in train_loss.items()]
     vloss = [np.array(v).sum() / len(v) for k, v in valid_loss.items()]
@@ -259,4 +310,16 @@ if __name__ == "__main__":
                             true_temperatures,
                             pred_temperatures,
                             model_path,
+                        )
+
+                        save_metrics(
+                            true_temperatures,
+                            pred_temperatures,
+                            model_type,
+                            lags,
+                            hidden,
+                            num_layers,
+                            DROPOUT,
+                            LEARNING_RATE,
+                            epochs,
                         )
