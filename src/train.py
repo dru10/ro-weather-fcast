@@ -28,23 +28,25 @@ EPOCHS = int(os.getenv("EPOCHS"))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MODEL_PATH = os.path.join(
-    BASE_PATH,
-    "models",
-    "LSTM",
-    "lags",
-    str(N_LAGS),
-    "hidden",
-    str(HIDDEN_SIZE),
-    "layers",
-    str(NUM_LAYERS),
-    "dropout",
-    str(DROPOUT),
-    "learning_rate",
-    str(LEARNING_RATE),
-    "epochs",
-    str(EPOCHS),
-)
+
+def build_model_path(hidden, lags, epochs):
+    return os.path.join(
+        BASE_PATH,
+        "models",
+        "LSTM",
+        "lags",
+        str(lags),
+        "hidden",
+        str(hidden),
+        "layers",
+        str(NUM_LAYERS),
+        "dropout",
+        str(DROPOUT),
+        "learning_rate",
+        str(LEARNING_RATE),
+        "epochs",
+        str(epochs),
+    )
 
 
 class MyLSTM(nn.Module):
@@ -156,7 +158,7 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
                     f"Epoch: {epoch:{len(str(epochs))}}",
                     f"Sample: {sample:{len(str(x_train.shape[0]))}}",
                     f"Train Loss: {loss.item():3.8f}",
-                    f"Avg Valid Loss: {avg_loss}",
+                    f"Avg Valid Loss: {avg_loss:3.8f}",
                 )
 
     end = time.time()
@@ -223,42 +225,55 @@ if __name__ == "__main__":
     temp_scaler = datasets["temp_scaler"]
     valid_index = datasets["valid_timestamps"]
 
-    x_train, y_train = build_set(train_ds, to_predict_idx, N_LAGS)
+    for hidden in [32, 64, 128]:
+        for lags in [3, 5, 7]:
+            x_train, y_train = build_set(train_ds, to_predict_idx, lags)
 
-    # Add the last N_LAGS elements to valid_ds to ensure continuity
-    x_valid, y_valid = build_set(
-        torch.cat((train_ds[-N_LAGS:], valid_ds)), to_predict_idx, N_LAGS
-    )
+            # Add the last lags elements to valid_ds to ensure continuity
+            x_valid, y_valid = build_set(
+                torch.cat((train_ds[-lags:], valid_ds)), to_predict_idx, lags
+            )
 
-    # Instantiate model
-    model = MyLSTM(
-        input_size=train_ds.shape[1],
-        hidden_size=HIDDEN_SIZE,
-        num_layers=NUM_LAYERS,
-        dropout=DROPOUT,
-    ).to(device)
+            for epochs in [50, 100, 150]:
+                # Instantiate model
+                model = MyLSTM(
+                    input_size=train_ds.shape[1],
+                    hidden_size=hidden,
+                    num_layers=NUM_LAYERS,
+                    dropout=DROPOUT,
+                ).to(device)
+                criterion = nn.MSELoss()
+                optimizer = torch.optim.Adam(
+                    model.parameters(), lr=LEARNING_RATE
+                )
 
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+                train_loss, valid_loss = train_model(
+                    model=model,
+                    train_valid=(x_train, y_train, x_valid, y_valid),
+                    criterion=criterion,
+                    optimizer=optimizer,
+                    epochs=epochs,
+                )
 
-    train_loss, valid_loss = train_model(
-        model=model,
-        train_valid=(x_train, y_train, x_valid, y_valid),
-        criterion=criterion,
-        optimizer=optimizer,
-        epochs=EPOCHS,
-    )
+                model_path = build_model_path(hidden, lags, epochs)
+                os.makedirs(model_path)
 
-    os.makedirs(MODEL_PATH)
+                plot_loss_curves(train_loss, valid_loss, model_path)
 
-    plot_loss_curves(train_loss, valid_loss, MODEL_PATH)
+                torch.save(
+                    model.state_dict(), os.path.join(model_path, "params.pt")
+                )
 
-    torch.save(model.state_dict(), os.path.join(MODEL_PATH, "params.pt"))
+                true_temperatures, pred_temperatures = evaluate_model(
+                    model=model,
+                    x_valid=x_valid,
+                    y_valid=y_valid,
+                    temp_scaler=temp_scaler,
+                )
 
-    true_temperatures, pred_temperatures = evaluate_model(
-        model=model, x_valid=x_valid, y_valid=y_valid, temp_scaler=temp_scaler
-    )
-
-    plot_validation_results(
-        valid_index, true_temperatures, pred_temperatures, MODEL_PATH
-    )
+                plot_validation_results(
+                    valid_index,
+                    true_temperatures,
+                    pred_temperatures,
+                    model_path,
+                )
