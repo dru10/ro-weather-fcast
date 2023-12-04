@@ -9,6 +9,7 @@ import torch.nn as nn
 from dotenv import load_dotenv
 
 from dataset import get_train_valid_dataset
+from models import MyGRU, MyLSTM
 
 BASE_PATH = os.path.join("/", *os.environ["VIRTUAL_ENV"].split("/")[:-1])
 
@@ -29,17 +30,17 @@ EPOCHS = int(os.getenv("EPOCHS"))
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def build_model_path(hidden, lags, epochs):
+def build_model_path(model_type, hidden, lags, num_layers, epochs):
     return os.path.join(
         BASE_PATH,
         "models",
-        "LSTM",
+        str(model_type),
         "lags",
         str(lags),
         "hidden",
         str(hidden),
         "layers",
-        str(NUM_LAYERS),
+        str(num_layers),
         "dropout",
         str(DROPOUT),
         "learning_rate",
@@ -47,44 +48,6 @@ def build_model_path(hidden, lags, epochs):
         "epochs",
         str(epochs),
     )
-
-
-class MyLSTM(nn.Module):
-    def __init__(
-        self,
-        input_size,
-        hidden_size=128,
-        num_layers=4,
-        output_size=1,
-        dropout=0.5,
-    ):
-        super().__init__()
-
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            dropout=dropout,
-        )
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(in_features=hidden_size, out_features=output_size)
-
-    def forward(self, X, hidden):
-        out, hidden = self.lstm(X, hidden)
-        out = self.dropout(out)
-        out = self.fc(out)
-        # Only care about last prediction
-        return out[-1], hidden
-
-    def initialize_hidden(self):
-        hidden = (
-            torch.zeros(self.num_layers, self.hidden_size).to(device),
-            torch.zeros(self.num_layers, self.hidden_size).to(device),
-        )
-        return hidden
 
 
 def build_set(ds, to_predict_idx, lags=10):
@@ -110,7 +73,7 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
     x_train, y_train, x_valid, y_valid = train_valid
 
     for epoch in range(epochs):
-        hidden = model.initialize_hidden()
+        hidden = model.initialize_hidden(device)
         sample = 0
         for X, y_true in zip(x_train, y_train):
             sample += 1
@@ -119,7 +82,10 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
             y_true = y_true.to(device)
 
             # Reset hidden state
-            hidden = tuple([state.data for state in hidden])
+            if type(hidden) == tuple:
+                hidden = tuple([state.data for state in hidden])
+            else:
+                hidden = hidden.data
 
             optimizer.zero_grad()
 
@@ -132,7 +98,7 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
             if sample % 300 == 0:
                 train_loss[epoch].append(loss.item())
 
-                val_hidden = model.initialize_hidden()
+                val_hidden = model.initialize_hidden(device)
 
                 total_val_loss = 0
 
@@ -142,7 +108,12 @@ def train_model(model, train_valid: tuple, criterion, optimizer, epochs=50):
                     X_val = X_val.to(device)
                     y_val_true = y_val_true.to(device)
 
-                    val_hidden = tuple([state.data for state in val_hidden])
+                    if type(val_hidden) == tuple:
+                        val_hidden = tuple(
+                            [state.data for state in val_hidden]
+                        )
+                    else:
+                        val_hidden = val_hidden.data
 
                     y_val_pred, val_hidden = model.forward(X_val, val_hidden)
                     val_loss = criterion(y_val_pred, y_val_true)
@@ -173,11 +144,14 @@ def evaluate_model(model, x_valid, y_valid, temp_scaler):
     pred_temperatures = np.zeros(true_temperatures.shape)
 
     model.eval()
-    hidden = model.initialize_hidden()
+    hidden = model.initialize_hidden(device)
     for idx, x in enumerate(x_valid):
         x = x.to(device)
 
-        hidden = tuple([state.data for state in hidden])
+        if type(hidden) == tuple:
+            hidden = tuple([state.data for state in hidden])
+        else:
+            hidden = hidden.data
         pred, hidden = model.forward(x, hidden)
 
         pred_temp = temp_scaler.inverse_transform(
@@ -225,55 +199,64 @@ if __name__ == "__main__":
     temp_scaler = datasets["temp_scaler"]
     valid_index = datasets["valid_timestamps"]
 
-    for hidden in [32, 64, 128]:
-        for lags in [3, 5, 7]:
-            x_train, y_train = build_set(train_ds, to_predict_idx, lags)
+    for model_type in ["LSTM", "GRU"]:
+        for hidden in [32, 64, 128]:
+            for lags in [3, 5, 7]:
+                x_train, y_train = build_set(train_ds, to_predict_idx, lags)
 
-            # Add the last lags elements to valid_ds to ensure continuity
-            x_valid, y_valid = build_set(
-                torch.cat((train_ds[-lags:], valid_ds)), to_predict_idx, lags
-            )
-
-            for epochs in [50, 100, 150]:
-                # Instantiate model
-                model = MyLSTM(
-                    input_size=train_ds.shape[1],
-                    hidden_size=hidden,
-                    num_layers=NUM_LAYERS,
-                    dropout=DROPOUT,
-                ).to(device)
-                criterion = nn.MSELoss()
-                optimizer = torch.optim.Adam(
-                    model.parameters(), lr=LEARNING_RATE
+                # Add the last lags elements to valid_ds to ensure continuity
+                x_valid, y_valid = build_set(
+                    torch.cat((train_ds[-lags:], valid_ds)),
+                    to_predict_idx,
+                    lags,
                 )
 
-                train_loss, valid_loss = train_model(
-                    model=model,
-                    train_valid=(x_train, y_train, x_valid, y_valid),
-                    criterion=criterion,
-                    optimizer=optimizer,
-                    epochs=epochs,
-                )
+                for num_layers in [2, 4, 8]:
+                    for epochs in [50, 100, 150]:
+                        # Instantiate model
+                        instance = MyLSTM if model_type == "LSTM" else MyGRU
 
-                model_path = build_model_path(hidden, lags, epochs)
-                os.makedirs(model_path)
+                        model = instance(
+                            input_size=train_ds.shape[1],
+                            hidden_size=hidden,
+                            num_layers=num_layers,
+                            dropout=DROPOUT,
+                        ).to(device)
+                        criterion = nn.MSELoss()
+                        optimizer = torch.optim.Adam(
+                            model.parameters(), lr=LEARNING_RATE
+                        )
 
-                plot_loss_curves(train_loss, valid_loss, model_path)
+                        train_loss, valid_loss = train_model(
+                            model=model,
+                            train_valid=(x_train, y_train, x_valid, y_valid),
+                            criterion=criterion,
+                            optimizer=optimizer,
+                            epochs=epochs,
+                        )
 
-                torch.save(
-                    model.state_dict(), os.path.join(model_path, "params.pt")
-                )
+                        model_path = build_model_path(
+                            model_type, hidden, lags, num_layers, epochs
+                        )
+                        os.makedirs(model_path, exist_ok=True)
 
-                true_temperatures, pred_temperatures = evaluate_model(
-                    model=model,
-                    x_valid=x_valid,
-                    y_valid=y_valid,
-                    temp_scaler=temp_scaler,
-                )
+                        plot_loss_curves(train_loss, valid_loss, model_path)
 
-                plot_validation_results(
-                    valid_index,
-                    true_temperatures,
-                    pred_temperatures,
-                    model_path,
-                )
+                        torch.save(
+                            model.state_dict(),
+                            os.path.join(model_path, "params.pt"),
+                        )
+
+                        true_temperatures, pred_temperatures = evaluate_model(
+                            model=model,
+                            x_valid=x_valid,
+                            y_valid=y_valid,
+                            temp_scaler=temp_scaler,
+                        )
+
+                        plot_validation_results(
+                            valid_index,
+                            true_temperatures,
+                            pred_temperatures,
+                            model_path,
+                        )
