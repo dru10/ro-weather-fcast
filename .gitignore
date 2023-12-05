@@ -3,7 +3,6 @@ venv/
 __pycache__/
 
 data.csv
-results.csv
 
 plots/
 models/
