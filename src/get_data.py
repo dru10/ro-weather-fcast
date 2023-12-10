@@ -29,6 +29,11 @@ strong_re = r"<strong>(\d+)</strong>"
 destination_path = os.path.join(
     "datasets", f"{weather_station}_{start_year}_{end_year}.csv"
 )
+try:
+    os.makedirs("datasets")
+except OSError:
+    # Already exists, do nothing
+    pass
 
 measured_data = [
     "Year",

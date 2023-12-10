@@ -18,17 +18,11 @@ RESULTS_CSV = os.path.join(BASE_PATH, "results.csv")
 
 load_dotenv(os.path.join(BASE_PATH, "env", "train.env"))
 
-# Dataset parameters
-N_LAGS = int(os.getenv("N_LAGS"))
-
 # LSTM parameters
-HIDDEN_SIZE = int(os.getenv("HIDDEN_SIZE"))
-NUM_LAYERS = int(os.getenv("NUM_LAYERS"))
 DROPOUT = float(os.getenv("DROPOUT"))
 
 # Train parameters
 LEARNING_RATE = float(os.getenv("LEARNING_RATE"))
-EPOCHS = int(os.getenv("EPOCHS"))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

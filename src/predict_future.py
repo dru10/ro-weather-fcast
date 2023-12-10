@@ -8,20 +8,25 @@ import torch
 import torch.nn as nn
 from scipy.stats import pearsonr
 from sklearn.preprocessing import MinMaxScaler
+from dotenv import load_dotenv
 
 from dataset import clean_data
 from models import MyGRU, MyLSTM
 from train import build_set, plot_loss_curves, train_model
 
-MODEL_TYPE = "GRU"
-INDEX = 3
+BASE_PATH = os.path.join("/", *os.environ["VIRTUAL_ENV"].split("/")[:-1])
 
-LAGS = 3
-HIDDEN = 32
-LAYERS = 2
-DROPOUT = 0.4
-LEARNIG_RATE = 0.001
-EPOCHS = 150
+load_dotenv(os.path.join(BASE_PATH, "env", "future.env"))
+
+MODEL_TYPE = os.getenv("MODEL_TYPE")
+INDEX = int(os.getenv("INDEX"))
+
+LAGS = int(os.getenv("LAGS"))
+HIDDEN = int(os.getenv("HIDDEN"))
+LAYERS = int(os.getenv("LAYERS"))
+DROPOUT = float(os.getenv("DROPOUT"))
+LEARNIG_RATE = float(os.getenv("LEARNING_RATE"))
+EPOCHS = int(os.getenv("EPOCHS"))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -79,7 +84,7 @@ def plot_prediction_performance(index, true_temps, pred_temps, model_path):
     plt.xlabel("Date")
     plt.ylabel("Average Temperature (°C)")
     plt.title("Extended future prediction results")
-    plt.savefig(os.path.join(model_path, "future_prediction_zoom.jpg"))
+    plt.savefig(os.path.join(model_path, "future_prediction.jpg"))
 
 
 def save_results(csv_path, pred_temps, true_temps):
@@ -97,8 +102,8 @@ def save_results(csv_path, pred_temps, true_temps):
         writer.writerow(stats)
 
 
-train_df = pd.read_csv("datasets/154210_2017_2022.csv")
-test_df = pd.read_csv("datasets/154210_2023_2023.csv")
+train_df = pd.read_csv(os.getenv("TRAIN_DS_PATH"))
+test_df = pd.read_csv(os.getenv("TEST_DS_PATH"))
 
 instance = MyLSTM if MODEL_TYPE == "LSTM" else MyGRU
 
@@ -119,21 +124,21 @@ model = instance(
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNIG_RATE)
 
-# train_loss, test_loss = train_model(
-#     model=model,
-#     train_valid=(x_train, y_train, x_test, y_test),
-#     criterion=criterion,
-#     optimizer=optimizer,
-#     epochs=EPOCHS,
-# )
+train_loss, test_loss = train_model(
+    model=model,
+    train_valid=(x_train, y_train, x_test, y_test),
+    criterion=criterion,
+    optimizer=optimizer,
+    epochs=EPOCHS,
+)
 
 model_path = os.path.join("models", "future", MODEL_TYPE, str(INDEX))
 os.makedirs(model_path, exist_ok=True)
 
-# torch.save(model.state_dict(), os.path.join(model_path, "params.pt"))
-# plot_loss_curves(train_loss, test_loss, model_path)
+torch.save(model.state_dict(), os.path.join(model_path, "params.pt"))
+plot_loss_curves(train_loss, test_loss, model_path)
 
-model.load_state_dict(torch.load(os.path.join(model_path, "params.pt")))
+# model.load_state_dict(torch.load(os.path.join(model_path, "params.pt")))
 
 steps = 10
 start = x_test[0]
@@ -143,4 +148,4 @@ true_temps = np.array(test_df[:steps]["Temperature_Avg"], dtype=np.float32)
 index = test_df[:steps].index
 plot_prediction_performance(index, true_temps, pred_temps, model_path)
 
-# save_results("future.csv", pred_temps, true_temps)
+save_results("future.csv", pred_temps, true_temps)
